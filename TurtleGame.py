@@ -1,5 +1,6 @@
 import turtle
 import random
+import math
 
 SCREEN_WIDTH = 600
 SCREEN_HEIGHT = 600
@@ -45,6 +46,7 @@ class Game:
         self.check_collision()
         self.move_obstacles()
         self.update_timer()
+        self.player.move()
         self.screen.mainloop()
 
     # Game logic 
@@ -57,7 +59,8 @@ class Game:
         if self.time_left > 0:
             self.time_left -= 1
             self.timer_display.update(f"Time: {self.time_left}")
-            self.screen.ontimer(self.update_timer, 1000)
+            if self.running:
+                self.screen.ontimer(self.update_timer, 1000)
         else:
             self.end_game()
 
@@ -80,14 +83,16 @@ class Game:
                 self.update_score()
                 obs.reset_position()
 
-        self.screen.ontimer(self.check_collision, 100)
+        if self.running:
+            self.screen.ontimer(self.check_collision, 100)
 
     def move_obstacles(self):
         if not self.running:
             return
         for obs in self.obstacles:
             obs.move()
-        self.screen.ontimer(self.move_obstacles, 300)
+        if self.running:
+            self.screen.ontimer(self.move_obstacles, 300)
 
     def end_game(self):
         self.running = False
@@ -104,13 +109,14 @@ class Game:
         self.play_again_button.hide()
         self.player.reset()
         self.goal.reset_position()
-        self.screen.tracer(0)
+
         for obs in self.obstacles:
             obs.reset_position()
-        self.screen.tracer(1)
-        self.check_collision()
-        self.move_obstacles()
-        self.update_timer()
+
+        self.screen.ontimer(self.check_collision, 100)
+        self.screen.ontimer(self.move_obstacles, 300)
+        self.screen.ontimer(self.update_timer, 1000)
+        self.screen.ontimer(self.player.move, 100)
 
 class Player:
     def __init__(self, game):
@@ -119,9 +125,11 @@ class Player:
         self.t.shape("turtle")
         self.t.color("green")
         self.t.penup()
+        self.direction = "stop"
 
     def reset(self):
         self.t.goto(0, 0)
+        self.direction = "stop"
 
     def keep_in_bounds(self):
         x, y = self.t.xcor(), self.t.ycor()
@@ -142,25 +150,36 @@ class Player:
             self.t.sety(self.game.y_limit)
             self.game.screen.tracer(1)
 
+    def move(self):
+        self.game.screen.tracer(0)
+        if self.direction == "left":
+            self.t.setheading(180)
+        elif self.direction == "right":
+            self.t.setheading(0)
+        elif self.direction == "up":
+            self.t.setheading(90)
+        elif self.direction == "down":
+            self.t.setheading(270)
+
+        if self.direction != "stop":
+            self.t.forward(20)
+            self.keep_in_bounds()
+
+        if self.game.running:
+            self.game.screen.ontimer(self.move, 100)
+        self.game.screen.tracer(1)
+
     def move_left(self):
-        self.t.setheading(180)
-        self.t.forward(SPEED)
-        self.keep_in_bounds()
+        self.direction = "left"
 
     def move_right(self):
-        self.t.setheading(0)
-        self.t.forward(SPEED)
-        self.keep_in_bounds()
+        self.direction = "right"
 
     def move_up(self):
-        self.t.setheading(90)
-        self.t.forward(SPEED)
-        self.keep_in_bounds()
+        self.direction = "up"
 
     def move_down(self):
-        self.t.setheading(270)
-        self.t.forward(SPEED)
-        self.keep_in_bounds()
+        self.direction = "down"
 
 class Goal:
     def __init__(self, game):
@@ -171,9 +190,36 @@ class Goal:
         self.t.penup()
         self.reset_position()
 
+    # def reset_position(self):
+    #     self.game.screen.tracer(0)
+    #     self.t.goto(random.randint(-self.game.x_limit, self.game.x_limit),
+    #                 random.randint(-self.game.y_limit, self.game.y_limit))
+    #     self.game.screen.tracer(1)
+
     def reset_position(self):
-        self.t.goto(random.randint(-self.game.x_limit, self.game.x_limit),
-                    random.randint(-self.game.y_limit, self.game.y_limit))
+        obstacles = getattr(self.game, "obstacles", [])  
+        x_limit, y_limit = self.game.x_limit, self.game.y_limit
+
+        for _ in range(80):
+            x = random.randint(-x_limit, x_limit)
+            y = random.randint(-y_limit, y_limit)
+
+            dist_player = math.hypot(x - self.game.player.t.xcor(), y - self.game.player.t.ycor())
+            if dist_player < 50:
+                continue
+
+            too_close = False
+            for obs in obstacles:
+                if math.hypot(x - obs.t.xcor(), y - obs.t.ycor()) < 35:  # >20 collision radius
+                    too_close = True
+                    break
+
+            if not too_close:
+                self.t.goto(x, y)
+                return
+
+        # Fallback
+        self.t.goto(0, 0)
 
 class Obstacle:
     def __init__(self, game):
@@ -197,23 +243,20 @@ class Obstacle:
     def move(self):
         self.t.setheading(random.choice([0, 90, 180, 270]))
         self.t.forward(10)
+        self.keep_in_bounds()
+
+    def keep_in_bounds(self):
         x, y = self.t.xcor(), self.t.ycor()
+        self.game.screen.tracer(0)
         if x > self.game.x_limit: 
-            self.game.screen.tracer(0)
             self.t.setx(-self.game.x_limit)
-            self.game.screen.tracer(1)
         if x < -self.game.x_limit: 
-            self.game.screen.tracer(0)
             self.t.setx(self.game.x_limit)
-            self.game.screen.tracer(1)
         if y > self.game.y_limit: 
-            self.game.screen.tracer(0)
             self.t.sety(-self.game.y_limit)
-            self.game.screen.tracer(1)
         if y < -self.game.y_limit: 
-            self.game.screen.tracer(0)
             self.t.sety(self.game.y_limit)
-            self.game.screen.tracer(1)
+        self.game.screen.tracer(1)
 
 class UI:
     def __init__(self, game, x, y, text, font=("Arial", 16, "bold")):
